@@ -84,7 +84,7 @@ The agent's state goes in the window option `@gig_state`: add `#{?@gig_state, #{
 
 ## Claude Code hooks
 
-`gig notify` keeps each agent's state (⏳ asks you something, ⚡ works, ✓ your turn) and rings the window's bell when it needs you. In `~/.claude/settings.json`:
+`gig notify` keeps each agent's state (⏳ asks you something, 🔨 works, ✓ your turn) and rings the window's bell when it needs you. In `~/.claude/settings.json`:
 
 ```json
 "hooks": {

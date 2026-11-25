@@ -1031,7 +1031,7 @@ def command_rows(client, config):
 TAGS = os.path.join(os.getenv("HERDR_APP_HOME") or os.path.expanduser("~/.config/herdr-app"), "data", "workbench", "tags.json")
 Y = "\033[33m" if sys.stdout.isatty() else ""
 # claude's status: the order in the list (who needs you first) and how it shows
-STATES = {"waiting": (0, f"{Y}⏳{O}"), "idle": (1, f"{G}✓ {O}"), "busy": (2, f"{C}⚡{O}")}
+STATES = {"waiting": (0, f"{Y}⏳{O}"), "idle": (1, f"{G}✓ {O}"), "busy": (2, f"{C}🔨{O}")}
 
 
 def transcripts(folder):
@@ -1192,7 +1192,7 @@ def menus():
     keys = {"o": "open", "r": "review", "a": "answer", "x": "close", "t": "tag", "space": "menu"}
     while True:
         code, out = fzf(worktree_rows(client, config) if client else [], "--with-nth", "3..", "--border-label", title,
-                        "--input-label", " ticket ", "--list-label", " ⏳ needs you  ✓ your turn  ⚡ working  ○ window, no claude ",
+                        "--input-label", " ticket ", "--list-label", " ⏳ needs you  ✓ your turn  🔨 working  ○ window, no claude ",
                         *modal(*keys, nav="j k move · i types a key or a branch or a merge request link",
                                typing="a key or a branch or a merge request link · esc stops typing"),
                         "--bind", ",".join(f"{k}:print({a})+accept" for k, a in keys.items()),
@@ -1347,7 +1347,7 @@ def run_gig(parser, argv):
 
 # gig notify: Claude Code's hooks call it. The window of the claude shows its state beside its name (@gig_state,
 # which .tmux.conf puts into the theme's window formats): no status bar job asks every few seconds.
-STATE_ICONS = {"busy": "⚡", "waiting": "⏳", "done": "✓", "ready": "✓"}
+STATE_ICONS = {"busy": "🔨", "waiting": "⏳", "done": "✓", "ready": "✓"}
 SOUNDS = {"waiting": "Ping", "done": "Glass"}
 
 
@@ -1493,7 +1493,7 @@ def mix(a, b, part):
 
 
 def cells(text):
-    """The columns text takes, escapes aside: ⏳ and ⚡ take two."""
+    """The columns text takes, escapes aside: ⏳ and 🔨 take two."""
     plain = re.sub(r"\033\[[0-9;]*m", "", text)
     return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in plain)
 
@@ -1550,7 +1550,7 @@ def sidebar_view(pane):
         color = {"asks": "red", "done": "green"}.get(need)
         bar = ink(look["accent"], "▌") if on else ink(color, "┃") if need else " "
         number = ink(look["accent"] if on else color or look["dim"], f"{index:>2}", bold=on or bool(need))   # prefix and it: that window
-        # ✓ is one column wide, ⏳ and ⚡ two; a ✓ you have seen is grey
+        # ✓ is one column wide, ⏳ and 🔨 two; a ✓ you have seen is grey
         icon = ink(color or ("" if on else look["dim"]), state) + " " if state == "✓" else state or "  "
         dot = ink(look["tag"], " •") if bell == "1" and not on and not need else ""   # another program's bell
         branch = branch_of(worktree) or "" if worktree else ""
@@ -1581,7 +1581,7 @@ def sidebar_view(pane):
         add("")
         add(" " + ink(look["dim"], "other sessions"))
         for sid, other in others:
-            count = " ".join(f"{icon}{states[sid][icon]}" for icon in ("⏳", "⚡", "✓") if states.get(sid, {}).get(icon))
+            count = " ".join(f"{icon}{states[sid][icon]}" for icon in ("⏳", "🔨", "✓") if states.get(sid, {}).get(icon))
             add("  " + cut(other, width - 4 - cells(count)), count + " ", ("session", sid))
     rows = rows[:max(height - 2, 1)]
     keys = tmux("show-options", "-gv", "prefix")
