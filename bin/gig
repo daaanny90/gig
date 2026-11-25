@@ -11,8 +11,8 @@ KEY is a ticket key (SHOP-1234), one of its branches in full, or a link with one
 one it already has, locally or on origin, else a new KEY-<slug of its summary>: a subtask's starts from its
 parent's branch (a local one from origin/<base_branch> when the parent has none yet), the others from
 origin/<base_branch>. Its worktree is the one git already has for it, else a new
-<dir>--<branch> next to the project's checkout with the git-ignored files of "copy" and pnpm install, as the
-launcher makes them. Then claude starts on the worktree with the first message (tasks.work, or the project's
+<dir>--<branch> next to the project's checkout with the git-ignored files of "copy" and pnpm install. Then
+claude starts on the worktree with the first message (tasks.work, or the project's
 ticket_request): inside tmux in a new window of the current session, marked with @roger_worktree, else in a Herdr
 space. A ticket whose window or space is open already gets it shown.
 
@@ -31,10 +31,11 @@ Settings come from the client's gig.json, the nearest one above the current fold
 wherever it runs), which gig init writes asking
 step by step: the ticket tracker with ticket_info, a command that prints a ticket as JSON ({"summary", "subtask",
 "parent"}, parent for subtasks only), the code host, the scripts and claude commands the projects share, agent_args
-(flags for claude), the first messages (tasks) and the projects. Paths in it are relative to its folder. Without one,
-projects.json (the radio's) as before. When the folder above the client's is a Claude Code plugin marketplace
-(.claude-plugin/marketplace.json), init also makes the client's plugin (_claude-plugin, listed there by the client's
-folder name) and enables it in the projects with local scope; gig's picker offers its skills as /<plugin>:<skill>.
+(flags for claude), the first messages (tasks) and the projects. Paths in it are relative to its folder. Without one
+gig stops, unless PROJECTS_FILE names a projects.json in the older format. When the folder above the client's is a
+Claude Code plugin marketplace (.claude-plugin/marketplace.json), init also makes the client's plugin (_claude-plugin,
+listed there by the client's folder name) and enables it in the projects with local scope; gig's picker offers its
+skills as /<plugin>:<skill>.
 """
 import argparse
 import json
@@ -48,14 +49,13 @@ import sys
 import time
 import unicodedata
 
-RADIO_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-PROJECTS_FILE = os.getenv("PROJECTS_FILE") or os.path.join(RADIO_DIR, "projects.json")   # another one for tests
+PROJECTS_FILE = os.getenv("PROJECTS_FILE")   # a projects.json in the older format, instead of the client's gig.json
 CONFIG_NAME = "gig.json"   # a client's settings, in the client's folder: gig init writes it
 PLUGIN_DIR = "_claude-plugin"   # the client's Claude Code plugin, in the client's folder: its skills are /<plugin>:<skill>
 KEY = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
 # A process with one of these names in the worktree may be a terminal of yours: close leaves the worktree alone
 INTERACTIVE = {"zsh", "bash", "sh", "fish", "nvim", "vim", "vi", "nano", "emacs"}
-# Branches that outlive every ticket: close deletes the folder, never these (as launcher.py)
+# Branches that outlive every ticket: close deletes the folder, never these
 SHARED_BRANCHES = {"main", "master", "develop", "sprint"}
 ASK = False   # a person at a terminal: questions become pickers, open and close get colours (main sets it)
 # fzf as a small dialog: the first tab-separated field is the value, the rest is what shows
@@ -119,9 +119,12 @@ def client_dir(start=None):
 
 
 def load_config(start=None):
-    """The client's gig.json, the nearest one above start (the current folder), else projects.json (the radio's, where
-    the settings were before; PROJECTS_FILE, set for tests, wins). Paths in gig.json are relative to the client's folder."""
-    client = None if os.getenv("PROJECTS_FILE") else client_dir(start)
+    """The client's gig.json, the nearest one above start (the current folder); PROJECTS_FILE, when set, wins. Paths in
+    gig.json are relative to the client's folder."""
+    client = None if PROJECTS_FILE else client_dir(start)
+    if not client and not PROJECTS_FILE:
+        raise Stop(f"no {CONFIG_NAME} in {os.path.realpath(start or os.getcwd())} or above: run gig in a client's folder, "
+                   f"or gig init there")
     path = os.path.join(client, CONFIG_NAME) if client else PROJECTS_FILE
     try:
         with open(path, encoding="utf-8") as f:
@@ -161,7 +164,7 @@ def find_project(config, key, name=None, strict=False):
         if here:   # parsed by herdr/roger/main.js
             return choose_project([*same, here])
     if strict:
-        raise Stop(f"{os.getcwd()} is not in a project's checkout: add it to projects.json, or pass -p")
+        raise Stop(f"{os.getcwd()} is not in a project's checkout: add it to the projects of {config['_file']}, or pass -p")
     if len(same) == 1 or len(projects) == 1:
         return (same or projects)[0]
     return choose_project(same or projects)
@@ -647,7 +650,7 @@ def close_ticket(args):
 
 
 # gig init: a client's gig.json, asked for step by step like a project scaffolder. What gig can tell from the
-# folder, projects.json and workbench.json it proposes, and enter keeps it; without a terminal (or with --yes) the
+# folder, a PROJECTS_FILE and workbench.json it proposes, and enter keeps it; without a terminal (or with --yes) the
 # proposals are the answers.
 C, B, D, G, R, O = ("\033[36m", "\033[1m", "\033[2m", "\033[32m", "\033[31m", "\033[0m") if sys.stdout.isatty() else ("",) * 6
 
@@ -732,7 +735,7 @@ def init_client(args):
     if os.path.exists(path):
         raise Stop(f"{path} exists already: edit it, or move it away to start over")
     tty = sys.stdin.isatty() and sys.stdout.isatty() and not args.yes
-    old = read_json(PROJECTS_FILE)
+    old = read_json(PROJECTS_FILE) if PROJECTS_FILE else {}
     mine = {os.path.realpath(os.path.expanduser(p["dir"])): p for p in old.get("projects", [])
             if inside(os.path.realpath(os.path.expanduser(p["dir"])), client)}
     top = old if mine else {}   # projects.json's settings belong to another client when none of its projects is here
