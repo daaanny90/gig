@@ -1375,12 +1375,13 @@ def notify(args):
         hook = json.loads(sys.stdin.read() or "{}")
     except ValueError:
         hook = {}
+    event = "busy" if args.event == "done" and background_work(hook) else args.event
     try:
-        state = STATE_ICONS.get(args.event, "")
+        state = STATE_ICONS.get(event, "")
         if tmux("show-options", "-wqv", "-t", pane, "@gig_state") != state:   # busy comes after every tool
             tmux("set-option", "-w", *(["-t", pane, "@gig_state", state] if state else ["-u", "-t", pane, "@gig_state"]))
             redraw()
-        if args.event not in SOUNDS:
+        if event not in SOUNDS:
             return
         fields = tmux("display-message", "-p", "-t", pane, "#{window_name}\t#{pane_tty}\t#{@roger_worktree}\t#{pane_current_path}")
         name, tty, worktree, cwd = (fields.split("\t") + ["", "", "", ""])[:4]
@@ -1401,6 +1402,14 @@ def notify(args):
             bell.write("\a")
     except OSError:
         pass
+
+
+def background_work(hook):
+    """A Stop while its subagents or workflows still run is no end: they wake the claude again with their report, and
+    the Stop after that one is the real done. Shells (a dev server) and crons (/loop) don't count, they would keep the
+    window busy for good."""
+    return any(isinstance(task, dict) and task.get("type") in ("subagent", "workflow")
+               for task in hook.get("background_tasks") or [])
 
 
 # gig sidebar: the session's windows in a narrow pane on the left, as Herdr lists its spaces: a card for each, with
