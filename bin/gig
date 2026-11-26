@@ -1420,10 +1420,18 @@ def background_work(hook):
 # wait-for) is signalled: by tmux's hooks, gig notify, a tag set in the menu and .tmux.conf (a new theme).
 SIDEBAR_WIDTH = "32"   # @gig_sidebar_width in .tmux.conf takes another
 REDRAW = "gig-sidebar"
+SPIN = "\ue000"   # where a working agent's spinner goes in the screen: one column, the loop puts SPINNER's frames there
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPIN_STEP = 0.1   # seconds a frame shows
 
 
 def sidebar_width():
     return tmux("show-options", "-gqv", "@gig_sidebar_width") or SIDEBAR_WIDTH
+
+
+def spin():
+    """The spinner's frame now: the same in every sidebar."""
+    return SPINNER[int(time.monotonic() / SPIN_STEP) % len(SPINNER)]
 
 
 def redraw():
@@ -1545,7 +1553,7 @@ def sidebar_theme():
 def sidebar_view(pane):
     """The sidebar's screen: the session's windows as cards (number, state and ticket, project, the words of the
     branch, tag), the other sessions with their agents' states, the keys at the bottom. Also what each line goes to
-    when clicked (a window or a session) and the current window."""
+    when clicked (a window or a session), the current window and where the spinners of the working agents are."""
     session, name, width, height = tmux("display-message", "-p", "-t", pane,
                                         "#{session_id}\t#{session_name}\t#{pane_width}\t#{pane_height}").split("\t")
     width, height, tags, look = int(width), int(height), read_json(TAGS), sidebar_theme()
@@ -1557,8 +1565,19 @@ def sidebar_view(pane):
         if target:
             targets[len(rows)] = target
 
+    def tally(found):   # how many windows have each state, the working ones with a spinner
+        return " ".join(f"{ink('cyan', SPIN) if icon == '🔨' else icon}{found[icon]}" for icon in ("⏳", "🔨", "✓")
+                        if found.get(icon))
+
+    states = {}
+    for line in tmux("list-windows", "-a", "-F", "#{session_id}\t#{@gig_state}").splitlines():
+        where, state = (line.split("\t") + [""])[:2]
+        if state:
+            states.setdefault(where, {}).setdefault(state, 0)
+            states[where][state] += 1
     rule = " " + ink(look["rule"], "─" * (width - 2))
-    add(" " + ink(look["fg"], cut(name, width - 2), bold=True))
+    count = tally(states.get(session, {}))
+    add(" " + ink(look["fg"], cut(name, width - 3 - cells(count)), bold=True), count + " " if count else "")
     add(rule)
     windows = [(row.split("\t") + [""] * 8)[:8] for row in tmux(
         "list-windows", "-t", session, "-F", "#{window_id}\t#{window_index}\t#{window_active}\t#{window_bell_flag}\t"
@@ -1571,8 +1590,9 @@ def sidebar_view(pane):
         color = {"asks": "red", "done": "green"}.get(need)
         bar = ink(look["accent"], "▌") if on else ink(color, "┃") if need else " "
         number = ink(look["accent"] if on else color or look["dim"], f"{index:>2}", bold=on or bool(need))   # prefix and it: that window
-        # ✓ is one column wide, ⏳ and 🔨 two; a ✓ you have seen is grey
-        icon = ink(color or ("" if on else look["dim"]), state) + " " if state == "✓" else state or "  "
+        # ✓ and the spinner are one column wide, ⏳ two; a ✓ you have seen is grey
+        icon = ink("cyan", SPIN) + " " if state == "🔨" else \
+            ink(color or ("" if on else look["dim"]), state) + " " if state == "✓" else state or "  "
         dot = ink(look["tag"], " •") if bell == "1" and not on and not need else ""   # another program's bell
         branch = branch_of(worktree) or "" if worktree else ""
         key = (KEY.match(branch) or KEY.match(title) or [""])[0]
@@ -1591,28 +1611,23 @@ def sidebar_view(pane):
                     add(f"{bar}      " + ink(look[color], cut(text, width - 8)), target=target)
         add(rule)
     sessions = [line.split("\t", 1) for line in tmux("list-sessions", "-F", "#{session_id}\t#{session_name}").splitlines()]
-    states = {}
-    for line in tmux("list-windows", "-a", "-F", "#{session_id}\t#{@gig_state}").splitlines():
-        where, state = (line.split("\t") + [""])[:2]
-        if state:
-            states.setdefault(where, {}).setdefault(state, 0)
-            states[where][state] += 1
     others = [(sid, other) for sid, other in sessions if sid != session]
     if others:
         add("")
         add(" " + ink(look["dim"], "other sessions"))
         for sid, other in others:
-            count = " ".join(f"{icon}{states[sid][icon]}" for icon in ("⏳", "🔨", "✓") if states.get(sid, {}).get(icon))
+            count = tally(states.get(sid, {}))
             add("  " + cut(other, width - 4 - cells(count)), count + " ", ("session", sid))
     rows = rows[:max(height - 2, 1)]
     keys = tmux("show-options", "-gv", "prefix")
     rows += [""] * (height - 1 - len(rows)) + [" " + ink(look["dim"], cut(f"{keys} b hides · {keys} T gig", width - 2))]
-    return "\n".join(rows), targets, current
+    spins = [(line, cells(row[:row.index(SPIN)]) + 1) for line, row in enumerate(rows, 1) if SPIN in row]
+    return "\n".join(rows), targets, current, spins
 
 
 def sidebar(args):
     """The sidebar itself, in its pane: draws, waits for the redraw channel (or a minute, for the tags), a resize
-    or a click, which goes to the window clicked. Focus goes back where it came from: C-h does not stop here."""
+    or a click, which goes to the window clicked, and meanwhile turns the spinners of the agents that work. Focus goes back where it came from: C-h does not stop here."""
     if args.follow or args.toggle:
         import fcntl
         import tempfile
@@ -1639,14 +1654,22 @@ def sidebar(args):
     try:
         while True:
             try:
-                screen, targets, current = sidebar_view(pane)
+                screen, targets, current, spins = sidebar_view(pane)
             except Stop:
-                screen = ""
-            sys.stdout.write("\033[H\033[J" + screen)
+                screen, spins = "", []
+            sys.stdout.write("\033[H\033[J" + screen.replace(SPIN, spin()))
             sys.stdout.flush()
             if waiter is None:
                 waiter = subprocess.Popen(["tmux", "wait-for", REDRAW], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-            ready = select.select([fd, waiter.stdout, wake_r], [], [], 60)[0]
+            until = time.monotonic() + 60
+            while True:
+                left = max(until - time.monotonic(), 0)
+                ready = select.select([fd, waiter.stdout, wake_r], [], [], min(SPIN_STEP, left) if spins else left)[0]
+                if ready or not spins or not left:
+                    break
+                # the spinners turn: only their cells, nothing asked of tmux
+                sys.stdout.write("".join(f"\033[{line};{col}H" + ink("cyan", spin()) for line, col in spins))
+                sys.stdout.flush()
             if waiter.stdout in ready:   # signalled: it ended
                 waiter.wait()
                 waiter = None
