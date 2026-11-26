@@ -1027,8 +1027,8 @@ def command_rows(client, config):
 
 
 # The ticket list is also the agents' overview: each worktree with the state of claude in its window (from
-# claude agents --json, through the pane's tty) and its tag, the reminder the Herdr workbench keeps per branch.
-TAGS = os.path.join(os.getenv("HERDR_APP_HOME") or os.path.expanduser("~/.config/herdr-app"), "data", "workbench", "tags.json")
+# claude agents --json, through the pane's tty) and its tag, a reminder per branch (gig tag) as { branch: { tag, round } }.
+TAGS = os.path.join(os.getenv("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "gig", "tags.json")
 Y = "\033[33m" if sys.stdout.isatty() else ""
 # claude's status: the order in the list (who needs you first) and how it shows
 STATES = {"waiting": (0, f"{Y}⏳{O}"), "idle": (1, f"{G}✓ {O}"), "busy": (2, f"{C}🔨{O}")}
@@ -1093,11 +1093,14 @@ def branch_of(worktree):
     return head.removeprefix("ref: refs/heads/") if head.startswith("ref: refs/heads/") else None
 
 
-def set_tag(branch, text):
-    """As workbench-tag TEXT and --clear: the tag of a branch; an empty one goes, the review round stays."""
+def set_tag(branch, text, round_=False):
+    """The tag of a branch; an empty one goes, the review round stays. round_: "R<n> ✓", the branch's next round."""
     tags = read_json(TAGS)
     entry = dict(tags.get(branch) or {}, tag=text)
-    if not text:
+    if round_:
+        entry["round"] = entry.get("round", 0) + 1
+        entry["tag"] = f"R{entry['round']} ✓"
+    elif not text:
         del entry["tag"]
     if entry:
         tags[branch] = entry
@@ -1108,6 +1111,15 @@ def set_tag(branch, text):
         json.dump(tags, f, indent=2, ensure_ascii=False)
     os.replace(TAGS + ".tmp", TAGS)
     redraw()   # the sidebars show tags
+
+
+def tag(args):
+    """gig tag: the tag of the branch it runs on, also from an agent (tasks.review ends with gig tag --round)."""
+    branch = run(["git", "branch", "--show-current"]).stdout.strip()
+    if not branch:
+        raise Stop("not on a branch")
+    set_tag(branch, "" if args.clear else " ".join(args.text), round_=args.round)
+    print((read_json(TAGS).get(branch) or {}).get("tag") or "no tag")
 
 
 def ask_tag(folder):
@@ -1748,10 +1760,15 @@ def main():
     side.add_argument("--toggle", metavar="SESSION", help="show or hide the session's sidebar (prefix+b)")
     linker = commands.add_parser("links", help="the session's tickets with their links: the ticket and its merge request (prefix+u)")
     linker.add_argument("session", nargs="?", help="a tmux session (default: the current one)")
+    tagger = commands.add_parser("tag", help="tag the current branch: a reminder the ticket list and the sidebar show")
+    tagged = tagger.add_mutually_exclusive_group(required=True)
+    tagged.add_argument("text", nargs="*", default=[], help="the tag, e.g. answered")
+    tagged.add_argument("--round", action="store_true", help='"R<n> ✓": the branch\'s next review round')
+    tagged.add_argument("--clear", action="store_true", help="no tag (the rounds go on counting)")
     argv = sys.argv[1:]
     try:
         handlers = {"open": open_ticket, "close": close_ticket, "init": init_client, "notify": notify, "sidebar": sidebar,
-                    "links": links}
+                    "links": links, "tag": tag}
         if argv[:1] and argv[0] in handlers or argv[:1] and argv[0].startswith("-"):
             args = parser.parse_args(argv)
             if ASK and args.command in ("open", "close"):

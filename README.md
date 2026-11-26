@@ -47,10 +47,13 @@ gig close KEY|FOLDER [-f] [-n]
 gig links [SESSION]       the session's tickets with links to each ticket and its merge request
 gig sidebar --toggle SESSION
 gig notify busy|waiting|done|ready|end
+gig tag TEXT|--round|--clear
 gig init [--yes]
 ```
 
 `review` and `answer` find the ticket's merge request and open its branch with `tasks.review` or `tasks.answer`. The action picker offers the client plugin's skills and the `.md` files of `commands`.
+
+`gig tag` puts a reminder on the current branch (`answered`, `waiting for the shop`), shown in the ticket list and the sidebar. `--round` makes it `R<n> ✓`, the branch's next review round, so `tasks.review` can end with "run `gig tag --round`". The tags live in `~/.local/state/gig/tags.json` (`$XDG_STATE_HOME`).
 
 ## tmux
 
