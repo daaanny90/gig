@@ -1421,7 +1421,7 @@ def background_work(hook):
 SIDEBAR_WIDTH = "32"   # @gig_sidebar_width in .tmux.conf takes another
 REDRAW = "gig-sidebar"
 SPIN = "\ue000"   # where a working agent's spinner goes in the screen: one column, the loop puts SPINNER's frames there
-SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPINNER = "⣾⣽⣻⢿⡿⣟⣯⣷"   # all four rows of dots: centred on the line, as the digits beside it
 SPIN_STEP = 0.1   # seconds a frame shows
 
 
@@ -1566,8 +1566,9 @@ def sidebar_view(pane):
             targets[len(rows)] = target
 
     def tally(found):   # how many windows have each state, the working ones with a spinner
-        return " ".join(f"{ink('cyan', SPIN) if icon == '🔨' else icon}{found[icon]}" for icon in ("⏳", "🔨", "✓")
-                        if found.get(icon))
+        # the one-column icons get a space before their count, as ⏳ has its own
+        return " ".join({"⏳": "⏳", "🔨": ink("cyan", SPIN) + " ", "✓": "✓ "}[icon] + str(found[icon])
+                        for icon in ("⏳", "🔨", "✓") if found.get(icon))
 
     states = {}
     for line in tmux("list-windows", "-a", "-F", "#{session_id}\t#{@gig_state}").splitlines():
@@ -1590,14 +1591,15 @@ def sidebar_view(pane):
         color = {"asks": "red", "done": "green"}.get(need)
         bar = ink(look["accent"], "▌") if on else ink(color, "┃") if need else " "
         number = ink(look["accent"] if on else color or look["dim"], f"{index:>2}", bold=on or bool(need))   # prefix and it: that window
-        # ✓ and the spinner are one column wide, ⏳ two; a ✓ you have seen is grey
-        icon = ink("cyan", SPIN) + " " if state == "🔨" else \
-            ink(color or ("" if on else look["dim"]), state) + " " if state == "✓" else state or "  "
+        # ✓ and the spinner are one column wide, ⏳ two: in the three columns between the number and the ticket the
+        # narrow ones stand in the middle; a ✓ you have seen is grey
+        icon = " " + ink("cyan", SPIN) + " " if state == "🔨" else \
+            " " + ink(color or ("" if on else look["dim"]), state) + " " if state == "✓" else " " + (state or "  ")
         dot = ink(look["tag"], " •") if bell == "1" and not on and not need else ""   # another program's bell
         branch = branch_of(worktree) or "" if worktree else ""
         key = (KEY.match(branch) or KEY.match(title) or [""])[0]
         shown = f"{key} {title[len(key) + 1:].replace('-', ' ')}" if key and title.startswith(key + "-") else title
-        head = cut(shown, width - 8 - cells(dot) - (len(need) + 2 if need else 0))
+        head = cut(shown, width - 9 - cells(dot) - (len(need) + 2 if need else 0))
         add(f"{bar}{number} {icon} " + ink(look["accent"] if on else color or look["fg"], head, bold=True) + dot,
             ink(color, need) + " " if need else
             "" if worktree else ink(look["dim"], cut(path.replace(os.path.expanduser("~"), "~"), width // 2)) + " ",
@@ -1608,7 +1610,7 @@ def sidebar_view(pane):
             for text, color in ((os.path.basename(worktree).split("--", 1)[0], "dim"), (words.replace("-", " "), "dim"),
                                 (tag and "⌁ " + tag, "tag")):
                 if text:
-                    add(f"{bar}      " + ink(look[color], cut(text, width - 8)), target=target)
+                    add(f"{bar}       " + ink(look[color], cut(text, width - 9)), target=target)
         add(rule)
     sessions = [line.split("\t", 1) for line in tmux("list-sessions", "-F", "#{session_id}\t#{session_name}").splitlines()]
     others = [(sid, other) for sid, other in sessions if sid != session]
