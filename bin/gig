@@ -1565,17 +1565,19 @@ def sidebar_view(pane):
         if target:
             targets[len(rows)] = target
 
-    def tally(found):   # how many windows have each state, the working ones with a spinner
+    def tally(found, done=""):   # how many windows have each state: a spinner for the working ones, ✓ in done's colour
         # the one-column icons get a space before their count, as ⏳ has its own
-        return " ".join({"⏳": "⏳", "🔨": ink("cyan", SPIN) + " ", "✓": "✓ "}[icon] + str(found[icon])
+        return " ".join({"⏳": "⏳", "🔨": ink("cyan", SPIN) + " ", "✓": ink(done, "✓") + " "}[icon] + str(found[icon])
                         for icon in ("⏳", "🔨", "✓") if found.get(icon))
 
-    states = {}
-    for line in tmux("list-windows", "-a", "-F", "#{session_id}\t#{@gig_state}").splitlines():
-        where, state = (line.split("\t") + [""])[:2]
+    states, unseen = {}, set()   # unseen: sessions with an end you have not gone to yet (its window's bell)
+    for line in tmux("list-windows", "-a", "-F", "#{session_id}\t#{@gig_state}\t#{window_bell_flag}").splitlines():
+        where, state, bell = (line.split("\t") + ["", ""])[:3]
         if state:
             states.setdefault(where, {}).setdefault(state, 0)
             states[where][state] += 1
+        if state == "✓" and bell == "1":
+            unseen.add(where)
     rule = " " + ink(look["rule"], "─" * (width - 2))
     count = tally(states.get(session, {}))
     add(" " + ink(look["fg"], cut(name, width - 3 - cells(count)), bold=True), count + " " if count else "")
@@ -1618,8 +1620,11 @@ def sidebar_view(pane):
         add("")
         add(" " + ink(look["dim"], "other sessions"))
         for sid, other in others:
-            count = tally(states.get(sid, {}))
-            add("  " + cut(other, width - 4 - cells(count)), count + " ", ("session", sid))
+            # as a window's card: red while one of its agents asks you something, green while an end waits for you
+            need = "red" if states.get(sid, {}).get("⏳") else "green" if sid in unseen else None
+            count = tally(states.get(sid, {}), "green" if sid in unseen else look["dim"])
+            add((ink(need, "┃") if need else " ") + " " + ink(need, cut(other, width - 4 - cells(count)), bold=bool(need)),
+                count + " ", ("session", sid))
     rows = rows[:max(height - 2, 1)]
     keys = tmux("show-options", "-gv", "prefix")
     rows += [""] * (height - 1 - len(rows)) + [" " + ink(look["dim"], cut(f"{keys} b hides · {keys} T gig", width - 2))]

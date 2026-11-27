@@ -81,6 +81,7 @@ set-hook -g 'window-linked[90]' { wait-for -S gig-sidebar }
 set-hook -g 'window-unlinked[90]' { wait-for -S gig-sidebar }
 set-hook -g 'window-renamed[90]' { wait-for -S gig-sidebar }
 set-hook -g 'alert-bell[90]' { wait-for -S gig-sidebar }
+set-hook -g 'client-session-changed[90]' { wait-for -S gig-sidebar }
 ```
 
 The agent's state goes in the window option `@gig_state`: add `#{?@gig_state, #{@gig_state},}` after `#W` in `window-status-format` and `window-status-current-format` to see it beside each window's name.
